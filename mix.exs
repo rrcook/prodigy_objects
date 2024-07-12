@@ -18,7 +18,7 @@ defmodule ProdigyObject.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
+  # Run "mix help deps" to learn about  dependencies.
   defp deps do
     [
       # {:dep_from_hexpm, "~> 0.3.0"},
