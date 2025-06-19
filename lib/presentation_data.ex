@@ -24,7 +24,7 @@ defmodule PresentationData do
 
   @type t :: %__MODULE__{
     segment_type: ObjectTypes.segment_type(),
-    segment_length: integer(),
+    segment_length: non_neg_integer(),
     pdt_type: ObjectTypes.presentation_data_type(),
     presentation_data: binary()
   }

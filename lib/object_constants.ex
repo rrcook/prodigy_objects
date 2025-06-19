@@ -16,6 +16,9 @@
 defmodule ObjectConstants do
   defmacro __using__(_) do
     quote do
+
+      map_swap = fn map -> Map.new(map, fn {key, val} -> {val, key} end) end
+
       @value_object_map %{
         0x00 => :page_format_object,
         0x04 => :page_template_object,
@@ -23,8 +26,7 @@ defmodule ObjectConstants do
         0x0C => :program_object,
         0x0E => :window_object
       }
-
-      @object_value_map Map.new(@value_object_map, fn {key, val} -> {val, key} end)
+      @object_value_map map_swap.(@value_object_map)
 
       @value_segment_map %{
         0x01 => :program_call,
@@ -41,23 +43,42 @@ defmodule ObjectConstants do
         0x61 => :program_data,
         0x71 => :keyword_navigation
       }
-
-      @segment_value_map Map.new(@value_segment_map, fn {key, val} -> {val, key} end)
+      @segment_value_map map_swap.(@value_segment_map)
 
       @value_presentation_data_type_map %{
         0x01 => :presentation_data_naplps,
         0x02 => :presentation_data_ascii
       }
+      @presentation_data_type_value_map map_swap.(@value_presentation_data_type_map)
 
-      @presentation_data_type_value_map Map.new(@value_presentation_data_type_map, fn {key, val} -> {val, key} end)
+      @value_field_state_map %{
+        0x20 => :field_state_input_field,
+        0x40 => :field_state_display_only,
+        0x80 => :field_state_action_field
+      }
+      @field_state_value_map map_swap.(@value_field_state_map)
 
-      ##### Functions that might find a home later
+      @value_field_format_map %{
+        0x80 => :field_format_alphabetic,
+        0x40 => :field_format_numeric,
+        0x20 => :field_format_form,
+        0x10 => :field_format_password,
+        0x00 => :field_format_alphanumeric
+      }
+      @field_format_value_map map_swap.(@value_field_format_map)
 
-      # Puts the length of the buffer inside the buffer, at the offset.
-      # Currently assumes 16-little
-      defp inject_length(_buffer, _offset) do
-        0
-      end
+      @value_pc_event_map %{
+        0x02 => :pc_event_initializer,
+        0x04 => :pc_event_post_processor,
+        0x08 => :pc_event_help_processor
+      }
+      @pc_event_value_map map_swap.(@value_pc_event_map)
+
+      @value_pc_prefix_map %{
+        0x0d => :pc_prefix_program_call,
+        0x0f => :pc_prefix_program_embedded
+      }
+      @pc_prefix_value_map map_swap.(@value_pc_prefix_map)
 
     end
   end
