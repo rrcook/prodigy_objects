@@ -51,7 +51,7 @@ defmodule Header do
       candicacy_version_high: 0,
       num_objects: length(object_list),
       candidacy_version_low: 1,
-      object_list: object_list
+      object_list: object_list # This is a list of prodigy objects
     }
   end
 
