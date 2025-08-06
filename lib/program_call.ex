@@ -91,21 +91,23 @@ defmodule ProgramCall do
             parameters_buffer::binary
           >>
 
-        :pc_prefix_program_call_offset ->
+        :pc_prefix_program_embedded ->
           segment_length =
               1 + # segment_type
               2 + # segment_length
               1 + # event
               1 + # prefix
               2 + # program offset
-              parameters_length
+              parameters_length +
+              # Why do we need the embedded object, is it part of the segment?
+              byte_size(pc_segment.embedded_object)
 
           <<
             @segment_value_map[pc_segment.segment_type],
             segment_length::16-little,
             @pc_event_value_map[pc_segment.event],
             @pc_prefix_value_map[pc_segment.prefix],
-            parameters_length::16-little,
+            parameters_length::16-big,
             parameters_buffer::binary,
             pc_segment.embedded_object::binary
           >>
