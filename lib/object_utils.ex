@@ -15,6 +15,11 @@
 
 defmodule ObjectUtils do
 
+  # Makes sure a string is exactly the given length, padding with spaces if necessary.
+  @spec edit_length(binary(), non_neg_integer()) :: binary()
+  def edit_length(text, length),
+    do: String.slice(text, 0, length) |> String.pad_trailing(length, " ")
+
   # Converts a coordinate tuple to a NAPLPS coordinate binary.
   @spec naplps_coords({integer(), integer()}) :: binary()
   def naplps_coords({x, y}) do
@@ -31,10 +36,13 @@ defmodule ObjectUtils do
 
   @spec make_params_buffer(list(binary())) :: <<_::16, _::_*8>>
   def make_params_buffer(params) do
-    params_buffer = Enum.reduce(params, <<>>, fn param, acc ->
-      acc <> make_one_param(param)
-    end)
-    length = 2 + byte_size(params_buffer) # 2 for the length the rest is the parameter data
+    params_buffer =
+      Enum.reduce(params, <<>>, fn param, acc ->
+        acc <> make_one_param(param)
+      end)
+
+    # 2 for the length the rest is the parameter data
+    length = 2 + byte_size(params_buffer)
     <<length::16-big, params_buffer::binary>>
   end
 
@@ -42,12 +50,13 @@ defmodule ObjectUtils do
   defp make_one_param(param_buffer) do
     case param_buffer do
       # An empty parameter is a 0 with the inclusive length
-      <<>> -> << 0, 3, 0>>
+      <<>> ->
+        <<0, 3, 0>>
+
       _ ->
-        length = 2 + byte_size(param_buffer) # 2 for the length the rest is the parameter data
+        # 2 for the length the rest is the parameter data
+        length = 2 + byte_size(param_buffer)
         <<length::16-big, param_buffer::binary>>
     end
-
   end
-
 end

@@ -68,8 +68,8 @@ defmodule ProgramCall do
 
       case pc_segment.prefix do
         :pc_prefix_program_call ->
-          o_name = String.slice(pc_segment.object_name, 0, 8) |> String.pad_trailing(8, " ")
-          o_ext = String.slice(pc_segment.object_ext, 0, 3) |> String.pad_trailing(3, " ")
+          o_name = ObjectUtils.edit_length(pc_segment.object_name, 8)
+          o_ext = ObjectUtils.edit_length(pc_segment.object_ext, 3)
 
           segment_length =
               1 + # segment_type
