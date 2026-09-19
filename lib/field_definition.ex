@@ -14,6 +14,7 @@
 # see <https://www.gnu.org/licenses/>.
 
 defmodule FieldDefinition do
+
   defstruct [
     :segment_type,
     :segment_length,
@@ -28,61 +29,46 @@ defmodule FieldDefinition do
   ]
 
   @type t :: %__MODULE__{
-          segment_type: ObjectTypes.segment_type(),
-          segment_length: non_neg_integer(),
-          field_state: ObjectTypes.field_state(),
-          field_format: ObjectTypes.field_format(),
-          origin: ObjectTypes.xy(),
-          size: ObjectTypes.xy(),
-          field_name: non_neg_integer(),
-          text_id: non_neg_integer(),
-          cursor_id: non_neg_integer(),
-          cursor_origin: ObjectTypes.xy()
-        }
+    segment_type: ObjectTypes.segment_type(),
+    segment_length: non_neg_integer(),
+    field_state: ObjectTypes.field_state(),
+    field_format: ObjectTypes.field_format(),
+    origin: ObjectTypes.xy(),
+    size: ObjectTypes.xy(),
+    field_name: non_neg_integer(),
+    text_id: non_neg_integer(),
+    cursor_id: non_neg_integer(),
+    cursor_origin: ObjectTypes.xy()
+  }
 
   @doc """
   A field definition with no cursor.
 
   Recovered objects carry both shapes: `NH00CF4JB` from the service and the
   traced HEADLINE NEWS bodies stop after `text_id`, giving a 13-byte segment,
-  while others go on to name a cursor. Passing `nil` for `cursor_id` selects
-  the shorter form, and the encoder leaves off the cursor bytes entirely.
+  while others go on to name a cursor. This is the short form: it is `new/8`
+  with no cursor, and the encoder then leaves the cursor bytes off entirely.
   """
-  @spec new(
-          ObjectTypes.field_state(),
-          ObjectTypes.field_format(),
-          tuple(),
-          tuple(),
-          non_neg_integer(),
-          non_neg_integer()
-        ) ::
-          FieldDefinition.t()
+  @spec new(ObjectTypes.field_state(), ObjectTypes.field_format(), tuple(), tuple(), non_neg_integer(), non_neg_integer()) :: t()
   def new(field_state, field_format, origin, size, field_name, text_id) do
     new(field_state, field_format, origin, size, field_name, text_id, nil, nil)
   end
 
+  # Pass nil for cursor_id (and cursor_origin) to get the short form described
+  # on new/6.
   def new(field_state, field_format, origin, size, field_name, text_id, cursor_id, cursor_origin) do
     # size of "static data" is segment_type = 1, segment_length = 2, pdt_tye = 1
 
-    # segment_type,
-    # segment_length
-    # field_state
-    # field_format
-    # origin x, origin y
-    # size x, size y
-    # field_name
-    # text_id
-    # cursor_id and its origin
     segment_length =
-      1 +
-        2 +
-        1 +
-        1 +
-        3 +
-        3 +
-        1 +
-        1 +
-        if(is_nil(cursor_id), do: 0, else: 1 + 3)
+      1 + # segment_type,
+      2 + # segment_length
+      1 + # field_state
+      1 + # field_format
+      3 + # origin x, origin y
+      3 + # size x, size y
+      1 + # field_name
+      1 + # text_id
+      cursor_length(cursor_id) # cursor_id and cursor_origin xy, if there is a cursor
 
     %FieldDefinition{
       segment_type: :field_definition,
@@ -97,6 +83,11 @@ defmodule FieldDefinition do
       cursor_origin: cursor_origin
     }
   end
+
+  # Bytes the cursor adds to the segment: its id (1) and origin (3), or none
+  # at all in the short, cursor-less form.
+  defp cursor_length(nil), do: 0
+  defp cursor_length(_cursor_id), do: 1 + 3
 
   defimpl ObjectEncoder, for: FieldDefinition do
     use ObjectConstants
@@ -115,6 +106,9 @@ defmodule FieldDefinition do
       >>
     end
 
+    # The trailing cursor bytes - id, then origin - or nothing for a field
+    # built without a cursor (see FieldDefinition.new/6). segment_length above
+    # counts the same bytes via cursor_length/1, so the two always agree.
     defp cursor(%FieldDefinition{cursor_id: nil}), do: <<>>
 
     defp cursor(%FieldDefinition{} = fd),

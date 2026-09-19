@@ -1,4 +1,4 @@
-# Copyright 2026, Ralph Richard Cook
+# Copyright 2026, Ralph Richard Cook & Phillip Heller
 #
 # This file is part of Prodigy Reloaded.
 #
@@ -30,15 +30,27 @@ defmodule StandardMenu do
   parameter framing of simpler calls in `NH000000PG`. `menu_params/1` is
   covered by a test that reproduces `NH00CF4JB`'s segment byte for byte.
 
-  Six parameters, in order:
+  XXOPSM00 itself only interprets P1 and P2; it stores P3 to P6 and hands
+  them on to the rest of the menu programs. So the layouts below come from
+  the recovered objects rather than from the program.
 
-      P1  processor list: [count:1] then that many 13-byte OBJIDs
-      P2  mode byte
-      P3  [pages:1] then per action: OBJID, and optionally 'P' + a
-          length-prefixed parameter for the destination
-      P4  display attributes
-      P5  menu attributes
-      P6  action attributes
+  Six parameters, in order. `[x:n]` is a field of n bytes; lengths are
+  big-endian. A PEV is a field number - the n of TBOL's `&n`.
+
+      P1  processors: [count:1], then that many 13-byte OBJIDs. Only mode 0
+          uses them, to name the service's own processor programs.
+      P2  mode byte. The recovered HEADLINE NEWS objects use 3.
+      P3  next page: [pages:1], then what NEXT reaches from this page - an
+          OBJID, optionally followed by a destination parameter (below).
+      P4  choice map: [page:1][length:2], then for each numbered choice
+          [choice:1][offset of its entry within P6's body:2].
+      P5  display attributes: [page:1][length:2][initial cursor PEV:1], then
+          for each field [PEV:1][fg:1][bg:1][state:1][0:2], then a 0 byte.
+      P6  action list: [page:1][length:2], then for each choice its PEV and
+          entry - [PEV:1][action:1][type:1][target OBJID...] - then a 0 byte.
+
+  Each parameter is then length-framed by `ObjectUtils.make_params_buffer/1`
+  when the call is encoded.
 
   ## Navigating with a parameter
 
@@ -52,20 +64,18 @@ defmodule StandardMenu do
 
   @menu_program "XXOPSM00PGM"
 
-  # Type byte for a program object, as it appears inside an OBJID.
-  @type_program 0x0C
-
-  # Action 1 is Navigate; type 0 is an ordinary field rather than a TTX
-  # Assistant MENU field.
+  # The first two bytes of every P6 entry. Action 1 is Navigate; type 0 is an
+  # ordinary field rather than a TTX Assistant MENU field.
   @action_navigate 0x01
   @type_plain 0x00
 
-  # Menus here are single-page.
+  # The page byte that leads P4, P5 and P6. Menus built here are single-page.
   @page_one 0x01
 
+  # Colours and state for each field's P5 display entry: foreground 7 on
+  # background 0, and state 3, an action field.
   @fg_default 7
   @bg_default 0
-  # Field state 3 in a display entry is an action field.
   @state_action 3
 
   @doc """
@@ -86,6 +96,7 @@ defmodule StandardMenu do
   """
   @spec destination(binary()) :: binary()
   def destination(payload) when is_binary(payload) do
+    # The length counts the payload only, not the tag or the length itself.
     <<?P, byte_size(payload)::16-big, payload::binary>>
   end
 
@@ -94,18 +105,18 @@ defmodule StandardMenu do
 
   Options:
 
-    * `:mode` - menu mode byte, default 3
-    * `:processors` - OBJIDs for mode 0, default none
-    * `:pages` - page byte leading P3, default 0
-    * `:next_page` - what NEXT reaches from this page, as an OBJID followed by
-      any destination parameter. This is P3's real job: the recovered
-      NH00CF4JB has empty choice and action lists and uses its menu only to
-      name NH00CF4KB as its successor.
-    * `:actions` - one entry per numbered choice, each the OBJID (plus any
-      destination parameter) the choice navigates to. P4's choice-to-offset
-      map and P6's action list are built from these.
-    * `:display_attrs`, `:menu_attrs`, `:action_attrs` - overrides for the
-      attribute blocks, if the defaults do not suit.
+    * `:mode` - P2, default 3.
+    * `:processors` - P1's OBJIDs, default none. Only mode 0 uses them.
+    * `:pages` - the byte that leads P3, default 0.
+    * `:next_page` - the rest of P3: what NEXT reaches from this page, as an
+      OBJID followed by any destination parameter. The recovered NH00CF4JB has
+      empty choice and action lists and uses its menu only to name NH00CF4KB
+      as its successor.
+    * `:actions` - one target per numbered choice, in choice order: the OBJID
+      (plus any destination parameter) that choice navigates to. P4, P5 and
+      P6 are all built from this list.
+    * `:choice_attrs`, `:display_attrs`, `:action_attrs` - replace P4, P5 or
+      P6 outright, if the built ones do not suit.
 
   With no actions the defaults reproduce NH00CF4JB's parameters exactly.
   """
@@ -117,6 +128,9 @@ defmodule StandardMenu do
     next_page = Keyword.get(opts, :next_page) || <<>>
     targets = Keyword.get(opts, :actions, [])
 
+    # Every choice navigates, so each P6 entry is [Navigate][plain field]
+    # followed by the target. P4 and P6 both walk this list, which is what
+    # keeps P4's offsets pointing at the right P6 entries.
     entries = Enum.map(targets, &(<<@action_navigate, @type_plain>> <> &1))
 
     [
@@ -129,7 +143,11 @@ defmodule StandardMenu do
     ]
   end
 
-  # P4: [page][len:2] then [choice][offset into P6's action list:2] per choice.
+  # Build P4: for each choice, where its entry starts in P6.
+  #
+  # Choices are numbered from 1 in list order. The offset is measured from
+  # the start of P6's body, and each P6 entry takes 1 byte (its PEV) plus the
+  # entry itself, so each offset is the running total of the ones before it.
   defp choice_map(entries) do
     {rows, _} =
       Enum.map_reduce(Enum.with_index(entries, 1), 0, fn {e, choice}, off ->
@@ -140,8 +158,10 @@ defmodule StandardMenu do
     <<@page_one, byte_size(body)::16-big>> <> body
   end
 
-  # P5: [page][len:2][init cursor PEV] then a display entry per field,
-  # terminated by a zero byte.
+  # Build P5: one display entry per numbered field, 1..count, each drawn as an
+  # action field in the default colours. The leading 0 is the initial-cursor
+  # PEV byte, as in the recovered objects; the trailing 0 ends the list.
+  # With count 0 this is the empty form NH00CF4JB carries.
   defp display_attrs(count) do
     body =
       <<0>> <>
@@ -152,7 +172,8 @@ defmodule StandardMenu do
     <<@page_one, byte_size(body)::16-big>> <> body
   end
 
-  # P6: [page][len:2] then [PEV] + entry per action, terminated by a zero byte.
+  # Build P6: each entry prefixed with its choice's PEV (1, 2, ...), then a
+  # 0 byte to end the list.
   defp action_attrs(entries) do
     body =
       IO.iodata_to_binary(for {e, pev} <- Enum.with_index(entries, 1), do: <<pev>> <> e) <> <<0>>
@@ -168,6 +189,9 @@ defmodule StandardMenu do
   """
   @spec new(ObjectTypes.pc_event(), keyword()) :: ProgramCall.t()
   def new(event, opts \\ []) do
+    # ProgramCall takes the program's name and its type code separately:
+    # "XXOPSM00" and "PGM". No embedded object - the menu program is fetched
+    # by name.
     ProgramCall.new(
       event,
       :pc_prefix_program_call,
@@ -176,6 +200,5 @@ defmodule StandardMenu do
       <<>>,
       menu_params(opts)
     )
-    |> Map.put(:object_type, @type_program)
   end
 end
