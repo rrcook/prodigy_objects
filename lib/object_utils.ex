@@ -34,7 +34,18 @@ defmodule ObjectUtils do
     <<buffer::binary-size(offset), length::16-little, buffer::binary-size(length)>>
   end
 
-  @spec make_params_buffer(list(binary())) :: <<_::16, _::_*8>>
+  @doc """
+  Frame a parameter list as a program call's parameter area: a 2-byte length
+  (counting itself) followed by each parameter, framed by make_one_param/1.
+
+  `nil` yields no bytes at all - a call with NO parameter area, which is what
+  the recovered XXOPSM01 calls carry: they end at the object id. An empty list
+  still gets its 2-byte area header. The two are different on the wire and
+  both occur.
+  """
+  @spec make_params_buffer(list(binary()) | nil) :: binary()
+  def make_params_buffer(nil), do: <<>>
+
   def make_params_buffer(params) do
     params_buffer =
       Enum.reduce(params, <<>>, fn param, acc ->

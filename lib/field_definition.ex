@@ -41,6 +41,21 @@ defmodule FieldDefinition do
     cursor_origin: ObjectTypes.xy()
   }
 
+  @doc """
+  A field definition with no cursor.
+
+  Recovered objects carry both shapes: `NH00CF4JB` from the service and the
+  traced HEADLINE NEWS bodies stop after `text_id`, giving a 13-byte segment,
+  while others go on to name a cursor. This is the short form: it is `new/8`
+  with no cursor, and the encoder then leaves the cursor bytes off entirely.
+  """
+  @spec new(ObjectTypes.field_state(), ObjectTypes.field_format(), tuple(), tuple(), non_neg_integer(), non_neg_integer()) :: t()
+  def new(field_state, field_format, origin, size, field_name, text_id) do
+    new(field_state, field_format, origin, size, field_name, text_id, nil, nil)
+  end
+
+  # Pass nil for cursor_id (and cursor_origin) to get the short form described
+  # on new/6.
   def new(field_state, field_format, origin, size, field_name, text_id, cursor_id, cursor_origin) do
     # size of "static data" is segment_type = 1, segment_length = 2, pdt_tye = 1
 
@@ -53,8 +68,7 @@ defmodule FieldDefinition do
       3 + # size x, size y
       1 + # field_name
       1 + # text_id
-      1 + # cursor_id
-      3   # cursor_origin xy
+      cursor_length(cursor_id) # cursor_id and cursor_origin xy, if there is a cursor
 
     %FieldDefinition{
       segment_type: :field_definition,
@@ -70,6 +84,11 @@ defmodule FieldDefinition do
     }
   end
 
+  # Bytes the cursor adds to the segment: its id (1) and origin (3), or none
+  # at all in the short, cursor-less form.
+  defp cursor_length(nil), do: 0
+  defp cursor_length(_cursor_id), do: 1 + 3
+
   defimpl ObjectEncoder, for: FieldDefinition do
     use ObjectConstants
     @spec encode(FieldDefinition.t()) :: <<_::32, _::_*8>>
@@ -83,9 +102,16 @@ defmodule FieldDefinition do
         ObjectUtils.naplps_coords(field_definition.size)::binary,
         field_definition.field_name::8,
         field_definition.text_id::8,
-        field_definition.cursor_id::8,
-        ObjectUtils.naplps_coords(field_definition.cursor_origin)::binary
+        cursor(field_definition)::binary
       >>
     end
+
+    # The trailing cursor bytes - id, then origin - or nothing for a field
+    # built without a cursor (see FieldDefinition.new/6). segment_length above
+    # counts the same bytes via cursor_length/1, so the two always agree.
+    defp cursor(%FieldDefinition{cursor_id: nil}), do: <<>>
+
+    defp cursor(%FieldDefinition{} = fd),
+      do: <<fd.cursor_id::8, ObjectUtils.naplps_coords(fd.cursor_origin)::binary>>
   end
 end
